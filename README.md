@@ -142,7 +142,7 @@ Core functionality was tested with:
 
 ### Architecture
 
-![System Architecture](screenshots/architecture.png)
+![System Architecture](screenshots/Architecture.png)
 
 ### Superhero Query
 
