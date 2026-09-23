@@ -1,6 +1,7 @@
 import json
 import os
 import requests
+
 from enum import Enum
 from typing import Optional
 
@@ -10,6 +11,7 @@ from groq import Groq
 from pydantic import BaseModel, Field
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+
 
 load_dotenv()
 
@@ -24,6 +26,7 @@ if not SUPERHERO_API_TOKEN:
 
 client = Groq(api_key=GROQ_API_KEY)
 
+
 SUPERHERO_API_BASE_URL = "https://superheroapi.com/api"
 
 
@@ -31,17 +34,14 @@ def search_superhero(name: str) -> dict:
     """
     Search for a superhero using the Superhero API.
     """
-
     url = f"{SUPERHERO_API_BASE_URL}/{SUPERHERO_API_TOKEN}/search/{name}"
 
     try:
         response = requests.get(
             url,
-            timeout=10
+            timeout=30
         )
-
         response.raise_for_status()
-
         return response.json()
 
     except requests.RequestException as e:
@@ -233,279 +233,168 @@ def llm_route(question: str) -> RoutingDecision:
     )
 
     return decision
+def verify_route(question: str, decision: RoutingDecision):
+    """
+    Verify the LLM routing decision using the actual data sources.
 
-def verify_route(
-    question: str,
-    decision: RoutingDecision
-) -> RoutingDecision:
+    Returns:
+        verified_decision: The verified routing decision.
+        retrieved_text: Text retrieval results, if available.
+        superhero_data: Superhero API result, if available.
+    """
 
-    # Verify TEXT source
+    retrieved_text = []
+    superhero_data = None
+
     if decision.route == Route.TEXT:
-
-        text_results = retrieve_text(question)
-
-        if not text_results:
-            return RoutingDecision(
-                route=Route.UNKNOWN,
-                superhero_name=None,
-                reason="The text route was proposed, but no relevant text was found."
-            )
-
-        return RoutingDecision(
-            route=Route.TEXT,
-            superhero_name=None,
-            reason="The proposed text route was verified by the text retriever."
+        retrieved_text = retrieve_text(
+            question,
+            top_k=3,
+            threshold=0.1
         )
 
-    # Verify SUPERHERO source
+        if retrieved_text:
+            return decision, retrieved_text, superhero_data
+
+        return (
+            RoutingDecision(
+                route=Route.UNKNOWN,
+                superhero_name=None,
+                reason="No sufficiently relevant text information was found."
+            ),
+            retrieved_text,
+            superhero_data
+        )
+
     if decision.route == Route.SUPERHERO:
-
         if not decision.superhero_name:
-            return RoutingDecision(
-                route=Route.UNKNOWN,
-                superhero_name=None,
-                reason="The superhero route was proposed, but no superhero name was identified."
+            return (
+                RoutingDecision(
+                    route=Route.UNKNOWN,
+                    superhero_name=None,
+                    reason="No superhero name was identified."
+                ),
+                retrieved_text,
+                superhero_data
             )
 
         try:
-            superhero_data = search_superhero(
-                decision.superhero_name
-            )
+            superhero_data = search_superhero(decision.superhero_name)
 
-            if superhero_data.get("response") != "success":
-                return RoutingDecision(
-                    route=Route.UNKNOWN,
-                    superhero_name=decision.superhero_name,
-                    reason="The superhero could not be verified using the Superhero API."
-                )
-
-            return RoutingDecision(
-                route=Route.SUPERHERO,
-                superhero_name=decision.superhero_name,
-                reason="The proposed superhero route was verified using the Superhero API."
-            )
+            if superhero_data.get("response") == "success":
+                return decision, retrieved_text, superhero_data
 
         except RuntimeError:
-            return RoutingDecision(
+            pass
+
+        return (
+            RoutingDecision(
                 route=Route.UNKNOWN,
                 superhero_name=decision.superhero_name,
-                reason="The Superhero API could not be reached."
-            )
+                reason="The Superhero API did not return valid information."
+            ),
+            retrieved_text,
+            superhero_data
+        )
 
-    # Verify BOTH sources
     if decision.route == Route.BOTH:
-
-        if not decision.superhero_name:
-            return RoutingDecision(
-                route=Route.UNKNOWN,
-                superhero_name=None,
-                reason="The both route was proposed, but no superhero name was identified."
-            )
-
-        # Verify text source
-        text_results = retrieve_text(question)
-
-        if not text_results:
-            return RoutingDecision(
-                route=Route.UNKNOWN,
-                superhero_name=decision.superhero_name,
-                reason="The both route was proposed, but no relevant text was found."
-            )
-
-        # Verify superhero source
-        try:
-            superhero_data = search_superhero(
-                decision.superhero_name
-            )
-
-            if superhero_data.get("response") != "success":
-                return RoutingDecision(
-                    route=Route.UNKNOWN,
-                    superhero_name=decision.superhero_name,
-                    reason="The both route was proposed, but the superhero could not be verified."
-                )
-
-        except RuntimeError:
-            return RoutingDecision(
-                route=Route.UNKNOWN,
-                superhero_name=decision.superhero_name,
-                reason="The both route was proposed, but the Superhero API could not be reached."
-            )
-
-        return RoutingDecision(
-            route=Route.BOTH,
-            superhero_name=decision.superhero_name,
-            reason="Both the text source and Superhero API verified the proposed route."
+        retrieved_text = retrieve_text(
+            question,
+            top_k=3,
+            threshold=0.1
         )
 
-    # UNKNOWN remains UNKNOWN
-    return decision
-
-def verify_route(
-    question: str,
-    decision: RoutingDecision
-) -> RoutingDecision:
-
-    # Verify TEXT source
-    if decision.route == Route.TEXT:
-
-        text_results = retrieve_text(question)
-
-        if not text_results:
-            return RoutingDecision(
-                route=Route.UNKNOWN,
-                superhero_name=None,
-                reason="The text route was proposed, but no relevant text was found."
-            )
-
-        return RoutingDecision(
-            route=Route.TEXT,
-            superhero_name=None,
-            reason="The proposed text route was verified by the text retriever."
-        )
-
-    # Verify SUPERHERO source
-    if decision.route == Route.SUPERHERO:
-
-        if not decision.superhero_name:
-            return RoutingDecision(
-                route=Route.UNKNOWN,
-                superhero_name=None,
-                reason="The superhero route was proposed, but no superhero name was identified."
-            )
-
-        try:
-            superhero_data = search_superhero(
-                decision.superhero_name
-            )
-
-            if superhero_data.get("response") != "success":
-                return RoutingDecision(
-                    route=Route.UNKNOWN,
-                    superhero_name=decision.superhero_name,
-                    reason="The superhero could not be verified using the Superhero API."
+        if decision.superhero_name:
+            try:
+                superhero_data = search_superhero(
+                    decision.superhero_name
                 )
 
-            return RoutingDecision(
-                route=Route.SUPERHERO,
-                superhero_name=decision.superhero_name,
-                reason="The proposed superhero route was verified using the Superhero API."
-            )
+                if superhero_data.get("response") != "success":
+                    superhero_data = None
 
-        except RuntimeError:
-            return RoutingDecision(
-                route=Route.UNKNOWN,
-                superhero_name=decision.superhero_name,
-                reason="The Superhero API could not be reached."
-            )
+            except RuntimeError:
+                superhero_data = None
 
-    # Verify BOTH sources
-    if decision.route == Route.BOTH:
+        text_available = bool(retrieved_text)
+        superhero_available = superhero_data is not None
 
-        if not decision.superhero_name:
-            return RoutingDecision(
-                route=Route.UNKNOWN,
-                superhero_name=None,
-                reason="The both route was proposed, but no superhero name was identified."
-            )
+        if text_available and superhero_available:
+            return decision, retrieved_text, superhero_data
 
-        # Verify text source
-        text_results = retrieve_text(question)
-
-        if not text_results:
-            return RoutingDecision(
-                route=Route.UNKNOWN,
-                superhero_name=decision.superhero_name,
-                reason="The both route was proposed, but no relevant text was found."
-            )
-
-        # Verify superhero source
-        try:
-            superhero_data = search_superhero(
-                decision.superhero_name
-            )
-
-            if superhero_data.get("response") != "success":
-                return RoutingDecision(
-                    route=Route.UNKNOWN,
+        if text_available:
+            return (
+                RoutingDecision(
+                    route=Route.TEXT,
                     superhero_name=decision.superhero_name,
-                    reason="The both route was proposed, but the superhero could not be verified."
-                )
-
-        except RuntimeError:
-            return RoutingDecision(
-                route=Route.UNKNOWN,
-                superhero_name=decision.superhero_name,
-                reason="The both route was proposed, but the Superhero API could not be reached."
+                    reason="Text information was available, but superhero information was unavailable."
+                ),
+                retrieved_text,
+                superhero_data
             )
 
-        return RoutingDecision(
-            route=Route.BOTH,
-            superhero_name=decision.superhero_name,
-            reason="Both the text source and Superhero API verified the proposed route."
+        if superhero_available:
+            return (
+                RoutingDecision(
+                    route=Route.SUPERHERO,
+                    superhero_name=decision.superhero_name,
+                    reason="Superhero information was available, but no relevant text information was found."
+                ),
+                retrieved_text,
+                superhero_data
+            )
+
+        return (
+            RoutingDecision(
+                route=Route.UNKNOWN,
+                superhero_name=decision.superhero_name,
+                reason="Neither source provided usable information."
+            ),
+            retrieved_text,
+            superhero_data
         )
 
-    # UNKNOWN remains UNKNOWN
-    return decision
+    return decision, retrieved_text, superhero_data
 
-def hybrid_route(question: str) -> RoutingDecision:
+def hybrid_route(question: str):
+    """
+    Route a question using the LLM and verify the decision
+    using the actual available sources.
+    """
+    decision = llm_route(question)
 
-    # Stage 1: LLM proposes the route
-    llm_decision = llm_route(question)
-
-    # Stage 2: deterministic verification
-    verified_decision = verify_route(
+    verified_decision, retrieved_text, superhero_data = verify_route(
         question,
-        llm_decision
+        decision
     )
 
-    return verified_decision
+    return verified_decision, retrieved_text, superhero_data
 
-def get_superhero_context(superhero_name: str) -> dict:
+def get_superhero_context(superhero_data: dict, superhero_name: str):
     """
-    Retrieve superhero information from the Superhero API.
+    Extract the most relevant superhero information
+    from already retrieved API data.
     """
 
-    data = search_superhero(superhero_name)
+    if not superhero_data:
+        return None
 
-    if data.get("response") != "success":
-        raise RuntimeError(
-            f"Superhero '{superhero_name}' was not found."
-        )
-
-    results = data.get("results", [])
+    results = superhero_data.get("results", [])
 
     if not results:
-        raise RuntimeError(
-            f"No results found for superhero '{superhero_name}'."
-        )
+        return None
 
-    exact_matches = [
-        result
-        for result in results
-        if result.get("name", "").lower() == superhero_name.lower()
-    ]
+    for superhero in results:
+        if superhero.get("name", "").lower() == superhero_name.lower():
+            return superhero
 
-    superhero = (
-        exact_matches[0]
-        if exact_matches
-        else results[0]
-    )
+    return results[0]
 
-    return superhero
-
-def get_text_context(question: str) -> list:
+def get_text_context(retrieved_text):
     """
-    Retrieve relevant text chunks for the question.
+    Use already retrieved text results as the context.
     """
-
-    results = retrieve_text(
-        question=question,
-        top_k=3,
-        threshold=0.1
-    )
-
-    return results
+    return retrieved_text
 ANSWER_SYSTEM_PROMPT = """
 You are a helpful question-answering assistant.
 
@@ -527,7 +416,7 @@ Superhero API.
 """
 def generate_answer(
     question: str,
-    source_context: str
+    source_context: list
 ) -> str:
     """
     Generate the final answer using the hosted LLM.
@@ -555,71 +444,57 @@ Source context:
     )
 
     return response.choices[0].message.content
-def answer_question(question: str) -> dict:
+def answer_question(question: str):
     """
-    Process a user question through the complete chatbot pipeline.
-
-    Returns the generated answer and the sources used.
+    Route the question, reuse the verified retrieved data,
+    and generate the final answer.
     """
 
-    decision = hybrid_route(question)
+    decision, retrieved_text, superhero_data = hybrid_route(question)
 
     if decision.route == Route.UNKNOWN:
         return {
-            "answer": (
-                "I could not determine which available source "
-                "can reliably answer this question."
-            ),
+            "answer": "I could not find enough relevant information in the available sources to answer this question.",
             "sources": []
         }
 
-    source_parts = []
+    source_context = []
     sources = []
 
-    if decision.route in {Route.TEXT, Route.BOTH}:
+    if decision.route in (Route.TEXT, Route.BOTH):
+        text_context = get_text_context(retrieved_text)
 
-        text_results = get_text_context(question)
+        if text_context:
+            source_context.append({
+                "source": "Text Knowledge Base",
+                "content": text_context
+            })
 
-        for result in text_results:
+            sources.extend([
+                item["document"]
+                for item in text_context
+            ])
 
-            source_parts.append(
-                f"Source: {result['document']}\n"
-                f"Content: {result['content']}"
-            )
+    if decision.route in (Route.SUPERHERO, Route.BOTH):
+        superhero_context = get_superhero_context(superhero_data, decision.superhero_name)
 
-            if result["document"] not in sources:
-                sources.append(result["document"])
+        if superhero_context:
+            source_context.append({
+                "source": "Superhero API",
+                "content": superhero_context
+            })
 
-    if decision.route in {Route.SUPERHERO, Route.BOTH}:
-
-        superhero = get_superhero_context(
-            decision.superhero_name
-        )
-
-        source_parts.append(
-            "Source: Superhero API\n"
-            f"Name: {superhero.get('name')}\n"
-            f"Powerstats: {superhero.get('powerstats')}\n"
-            f"Biography: {superhero.get('biography')}\n"
-            f"Appearance: {superhero.get('appearance')}\n"
-            f"Work: {superhero.get('work')}\n"
-            f"Connections: {superhero.get('connections')}"
-        )
-
-        sources.append("Superhero API")
-
-    source_context = "\n\n".join(source_parts)
+            sources.append("Superhero API")
 
     answer = generate_answer(
-        question=question,
-        source_context=source_context
+        question,
+        source_context
     )
 
     return {
         "answer": answer,
-        "sources": sources
-    }
-    
+        "sources": list(dict.fromkeys(sources))
+    }    
 class AskRequest(BaseModel):
     question: str = Field(
         description="Natural language question for the chatbot"
