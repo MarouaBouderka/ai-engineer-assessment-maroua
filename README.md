@@ -4,7 +4,7 @@ A FastAPI chatbot that answers questions using a text knowledge base and the Sup
 
 ## Architecture
 
-![System Architecture](screenshots/architecture.png)
+![System Architecture](screenshots/rchitecture.png)
 
 The system follows a hybrid routing approach:
 
