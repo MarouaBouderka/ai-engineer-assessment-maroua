@@ -6,43 +6,52 @@ A FastAPI chatbot that answers questions using a text knowledge base and the Sup
 
 ![System Architecture](screenshots/Architecture.png)
 
-The system follows a hybrid routing approach:
+The system uses a hybrid routing approach:
 
 1. The user's question is received through `POST /ask`.
-2. A hosted LLM determines whether the question is related to the text dataset, superheroes, or both.
-3. The proposed route is verified before retrieving information.
-4. Relevant information is retrieved from the TF-IDF text retriever and/or the Superhero API.
-5. The retrieved context is provided to the hosted Groq LLM.
-6. The generated response includes the sources used.
+2. A hosted LLM proposes whether the question requires the text dataset, the Superhero API, or both.
+3. The proposed route is deterministically verified using the actual available sources.
+4. Relevant information is retrieved using the TF-IDF retriever and/or the Superhero API.
+5. The retrieved information is provided as context to the hosted Groq LLM.
+6. The LLM generates the final answer and identifies the sources used.
+
+The LLM is used for flexible natural-language routing, while deterministic verification checks that the required source actually provides relevant information.
+
+## Project Structure
+
+- `app.py` — Main application containing the FastAPI endpoint, LLM routing, deterministic route verification, TF-IDF retrieval, Superhero API integration, and answer generation.
+- `chatbot.ipynb` — Development and testing notebook used to experiment with and test the chatbot components.
+- `requirements.txt` — Python dependencies required to run the application.
+- `.env.example` — Example configuration showing the required API keys without exposing real credentials.
+- `.gitignore` — Prevents secrets, the virtual environment, Python cache files, and other local files from being committed.
+- `README.md` — Project setup, architecture, API usage, and testing information.
+- `screenshots/` — Architecture and API query screenshots.
 
 ## Setup
 
 ### 1. Create a virtual environment
 
-```bash
-python -m venv .venv
-```
+Run:
+
+`python -m venv .venv`
 
 Activate it on Windows:
 
-```bash
-.venv\Scripts\activate
-```
+`.venv\Scripts\activate`
 
 ### 2. Install dependencies
 
-```bash
-pip install -r requirements.txt
-```
+Run:
+
+`pip install -r requirements.txt`
 
 ### 3. Configure API keys
 
 Create a `.env` file in the project root:
 
-```env
-GROQ_API_KEY=your_groq_api_key
-SUPERHERO_API_TOKEN=your_superhero_api_token
-```
+`GROQ_API_KEY=your_groq_api_key`
+
+`SUPERHERO_API_TOKEN=your_superhero_api_token`
 
 The API keys are loaded from environment variables and are not included in the repository.
 
@@ -50,21 +59,15 @@ The API keys are loaded from environment variables and are not included in the r
 
 Start the FastAPI server:
 
-```bash
-python -m uvicorn app:app --reload
-```
+`python -m uvicorn app:app --reload`
 
 The API will be available at:
 
-```text
-http://127.0.0.1:8000
-```
+`http://127.0.0.1:8000`
 
 Interactive Swagger documentation:
 
-```text
-http://127.0.0.1:8000/docs
-```
+`http://127.0.0.1:8000/docs`
 
 ## API
 
@@ -74,21 +77,11 @@ The endpoint accepts a natural-language question.
 
 Example request:
 
-```json
-{
-  "question": "What is RAG, and what are Batman's powerstats?"
-}
-```
+`{"question": "What is RAG, and what are Batman's powerstats?"}`
 
 Example response:
 
-```json
-{
-  "question": "What is RAG, and what are Batman's powerstats?",
-  "answer": "...",
-  "sources": ["rag.txt", "Superhero API"]
-}
-```
+`{"question": "What is RAG, and what are Batman's powerstats?", "answer": "...", "sources": ["rag.txt", "Superhero API"]}`
 
 The `sources` field identifies where the information used to answer the question came from.
 
@@ -96,25 +89,19 @@ The `sources` field identifies where the information used to answer the question
 
 ### Superhero
 
-```text
-Who is Batman?
-```
+`Who is Batman?`
 
 This is routed to the Superhero API.
 
 ### Text Dataset
 
-```text
-What is Retrieval-Augmented Generation?
-```
+`What is Retrieval-Augmented Generation?`
 
 This is answered using the text knowledge base.
 
 ### Combined
 
-```text
-What is RAG, and what are Batman's powerstats?
-```
+`What is RAG, and what are Batman's powerstats?`
 
 This requires information from both the text knowledge base and the Superhero API.
 
@@ -139,10 +126,6 @@ Core functionality was tested with:
 - External service failures
 
 ## Screenshots
-
-### Architecture
-
-![System Architecture](screenshots/Architecture.png)
 
 ### Superhero Query
 
